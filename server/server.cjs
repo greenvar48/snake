@@ -366,6 +366,59 @@ app.delete('/api/scores', async (req, res) => {
   res.status(status).send();
 });
 
+app.post('/api/logout', (req, res) => {
+  let result = 400;
+
+  if(req.token !== undefined) {
+    res.clearCookie('username', { sameSite: "lax" });
+    res.clearCookie('token', { sameSite: "lax" });
+
+    result = 200;
+  }
+
+  res.status(result).send();
+});
+
+const changeUsername = (username, newUsername) => (session) => {
+  result = 0;
+
+  try {
+    session.executeWrite(async tx => {
+      return await tx.run(
+        'MATCH (u:user { username: $username }) SET u.username=$newUsername;',
+        { username, newUsername }
+      );
+    })
+  } catch (err) {
+    console.log(err);
+    result = -1;
+  }
+
+  return result;
+};
+
+app.post('/api/changeUsername', async (req, res) => {
+  let status = 400;
+  if(
+    req.token !== undefined &&
+    req.body.username !== undefined &&
+    !!req.body.username.trim().match(/^[a-zA-Z0-9_]+$/)
+  ) {
+    const username = req.body.username.trim();
+    status = execQuery(changeUsername(req.token.username, username), (n) => {
+      if(n === 0) {
+        res.cookies("token", jwt.sign({ username }, process.env.TOKEN_SECRET), { sameSite: "lax" });
+        res.cookies("username", username, { sameSite: "lax"});
+        return 200;
+      } else {
+        return 500;
+      }
+    });
+  }
+
+  res.status(status).send();
+});
+
 const parseCookie = str =>
   str
     .split(';')
@@ -376,16 +429,20 @@ const parseCookie = str =>
     }, {});
 
 wsServer.on('connection', function connection(socket, req) {
-  const cookies = parseCookie(req.headers.cookie);
-  const token = cookies.token;
+  if(req.headers.cookie) {
+    const cookies = parseCookie(req.headers.cookie);
+    const token = cookies.token;
 
-  jwt.verify(token, process.env.TOKEN_SECRET, (err, payload) => {
-    if(!err) {
-      wsHandlers[payload.username] = (data) => {
-        socket.send(data);
+    jwt.verify(token, process.env.TOKEN_SECRET, (err, payload) => {
+      if(!err) {
+        wsHandlers[payload.username] = (data) => {
+          socket.send(data);
+        }
+      } else {
+        console.log(err);
       }
-    } else {
-      console.log(err);
-    }
-  });
+    });
+  } else {
+    socket.close();
+  }
 });

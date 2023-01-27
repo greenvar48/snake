@@ -1,4 +1,12 @@
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+
+export const logout = createAsyncThunk('user/logoutStatus', async (arg, thunkAPI) => {
+  const res = await fetch('/api/logout', {
+    method: "POST"
+  });
+
+  return res.ok;
+});
 
 export const userSlice = createSlice({
   name: 'user',
@@ -17,6 +25,11 @@ export const userSlice = createSlice({
   },
   reducers: {
     set: (state, action) => { state.name = action.payload }
+  },
+  extraReducers: (builder) => {
+    builder.addCase(logout.fulfilled, (state, action) => {
+      state.name = "";
+    });
   }
 })
 

@@ -94,12 +94,10 @@ const Canvas = (props) => {
         }
 
         if(!gameOver && frameId.current === null && play) {
-            console.log("elo");
             const [handleKeydown, draw] = gameInit();
             frameId.current = window.requestAnimationFrame(draw);
 
             return () => {
-                console.log("bye");
                 window.cancelAnimationFrame(frameId.current);
                 window.removeEventListener('keydown', handleKeydown);
 
