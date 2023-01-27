@@ -1,0 +1,5 @@
+CREATE
+    (:user {
+        username: "joe",
+        password: "235f499ba8f32b725e1b8a6152c240239d8f1220ef1d3ad7873c1f90b20390e3495ba3947d19408e491404cc7bed32c2592784619031934429bbba700ee6f713"
+    });

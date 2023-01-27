@@ -1,0 +1,23 @@
+@use 'colors' as *
+
+@mixin input()
+    background-color: $darkTeal
+    border: 1px solid $richBlack
+    color: $beige
+    box-shadow: 1px 1px 1px 0px rgba(0,0,0,0.75)
+    
+    &:hover
+        background-color: $midTeal
+
+@mixin button()
+    @include input()
+    &:active
+        box-shadow: none
+        transform: translate(1px, 1px)
+
+@mixin msg()
+    padding: 0.2em
+    border-radius: 5px
+    box-shadow: 2px 2px 1px 0px rgba(0,0,0,0.75)
+    width: fit-content
+    margin: 0 auto

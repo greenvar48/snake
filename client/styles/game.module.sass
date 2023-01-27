@@ -1,0 +1,21 @@
+@use 'brush' as *
+@use 'input' as *
+@use 'colors' as *
+
+.container
+    display: flex
+    flex-direction: column
+    width: fit-content
+    align-items: center
+    font-family: 'Nanum Brush Script', cursive
+    font-size: 2em
+
+    canvas
+        width: min-content
+        border: 2px solid $richBlack
+        box-shadow: 1px 1px 1px 0px rgba(0,0,0,0.75)
+    
+    button
+        margin-top: 1em
+        @include input()
+        font-size: 0.5em
