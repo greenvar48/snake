@@ -1,6 +1,6 @@
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router";
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { Link } from "react-router-dom";
 import { useState } from 'react';
 
@@ -29,7 +29,7 @@ const User = () => {
         );
     };
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if(!username) {
             navigate('/login')
         } else {
@@ -54,10 +54,10 @@ const User = () => {
                     setScores(<p>Scores unavailable</p>);
                 }
             });
-        }
 
-        return () => {
-            socket.close();
+            return () => {
+                socket.close();
+            }
         }
     }, []);
 
@@ -65,9 +65,6 @@ const User = () => {
         <div className={ style.container }>
             <div className={ style.userinfo }>
                 <h1>User: { username }</h1>
-                {
-                    
-                }
                 <div className={ style.scores }>
                     <p>Top 10 scores: </p>
                     { scores === null ? "Loading" : scores }

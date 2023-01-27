@@ -4,6 +4,7 @@ const neo4j = require('neo4j-driver');
 const cookieParser = require('cookie-parser');
 const crypto = require('crypto');
 const ws = require('ws');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 const jwtUnpack = (req, res, next) => {
@@ -187,8 +188,8 @@ const saveScore = (username, score) => async (session) => {
     try {
       await session.executeWrite(async tx => {
         return await tx.run(
-          'MATCH (u:user { username: $username }) CREATE (u)-[:SCORED { datetime: datetime() }]->(:score { value: $score });',
-          { username, score }
+          'MATCH (u:user { username: $username }) CREATE (u)-[:SCORED { datetime: datetime() }]->(:score { value: $score, id: $id });',
+          { username, score, id: uuidv4() }
         );
       });
     } catch(error) {
@@ -286,12 +287,12 @@ const getScores = (username) => async (session) => {
     try {
       const queryResult = await session.executeRead(async tx => {
         return await tx.run(
-          'MATCH (:user { username: "joe" })-[:SCORED]->(s:score) RETURN s.value;',
+          'MATCH (:user { username: "joe" })-[:SCORED]->(s:score) RETURN s;',
           { username }
         );
       });
 
-      result.data = queryResult.records.map(record => record.get('s.value'));
+      result.data = queryResult.records.map(record => record.get('s').properties);
     } catch(error) {
       console.log(error);
       result.code = -2; // 500
@@ -324,6 +325,45 @@ app.get('/api/scores', async (req, res) => {
   }
 
   res.status(result.status).json({data: result.data});
+});
+
+const deleteScore = (scoreId) => async (session) => {
+  let result = 0;
+
+  try {
+    await session.executeWrite(async tx => {
+      return await tx.run(
+        'MATCH ()-[r:SCORED]->(s:score { id: $id }) DELETE r,s;',
+        { id: scoreId }
+      );
+    });
+  } catch(error) {
+    console.log(error);
+    result = -2; // 500
+  }
+
+  return result;
+};
+
+app.delete('/api/scores', async (req, res) => {
+  let status = 400;
+
+  if(
+    req.token !== undefined &&
+    req.body.scoreId !== undefined
+  ) {
+    await execQuery(deleteScore(req.body.scoreId), (n) => {
+      switch(n) {
+        case 0:
+          status = 200;
+          break;
+        default:
+          status = 500;
+      }
+    });
+  }
+
+  res.status(status).send();
 });
 
 const parseCookie = str =>
