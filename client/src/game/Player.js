@@ -1,6 +1,6 @@
 import vector from './VectorsMath';
 
-export function Player(dir) {
+export function Player(dir, squareSize, color) {
     this.head = null;
     this.tail = null;
     this.dir = dir;
@@ -66,10 +66,10 @@ export function Player(dir) {
     this.draw = function(ctx) {
         if(this.head !== null) {
             let currentNode = this.head;
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = color;
             
             do {
-                ctx.fillRect(currentNode.val.x, currentNode.val.y, 5, 5);
+                ctx.fillRect(currentNode.val.x, currentNode.val.y, squareSize, squareSize);
 
                 currentNode = currentNode.next;
             } while(currentNode !== this.head);
@@ -112,10 +112,10 @@ export function Player(dir) {
         })();
 
         const moveIsValid = 
-            nextPos.x > 5 &&
-            nextPos.x < canvas.width - 5 &&
-            nextPos.y > 5 &&
-            nextPos.y < canvas.width - 5 &&
+            nextPos.x > squareSize &&
+            nextPos.x < canvas.width - squareSize &&
+            nextPos.y > squareSize &&
+            nextPos.y < canvas.width - squareSize &&
             !collidingWithSelf;
 
         let appleWasEaten;

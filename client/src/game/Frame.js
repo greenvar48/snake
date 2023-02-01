@@ -1,11 +1,10 @@
 import vector from './VectorsMath';
 
-const drawFrame = (ctx) => {
+const drawFrame = (ctx, step, squareSize) => {
     ctx.fillStyle = '#ffffff';
-    const step = 6;
     let dir = {x: step, y: 0};
     let repeat = true;
-    const rectSize = {w: 5, h: 5};
+    const rectSize = {w: squareSize, h: squareSize};
 
     for (
         let pos = {x: 0, y: 0};

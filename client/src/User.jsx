@@ -1,8 +1,7 @@
 import { useSelector, useDispatch } from "react-redux";
 import { useNavigate } from "react-router";
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useRef, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useState } from 'react';
 
 import style from '../styles/user.module.sass';
 import Canvas from './Canvas';
@@ -14,6 +13,7 @@ const User = () => {
     const navigate = useNavigate();
     const dispatch = useDispatch();
     const [ scores, setScores ] = useState(null);
+    const socket = useRef(null);
 
     const scoreUpdateHandler = (data) => {
         setScores(
@@ -34,33 +34,47 @@ const User = () => {
     useLayoutEffect(() => {
         if(!username) {
             navigate('/login')
-        } else {
-            const socket = new WebSocket('ws://localhost:5173/ws');
-
-            socket.addEventListener('open', (openEv) => {
-                socket.addEventListener('message', (ev) => {
-                    scoreUpdateHandler(JSON.parse(ev.data));
-                });
-            });
-
-            fetch("/api/topScores", {
-                method: "GET"
-            })
-            .then(res => {
-                if(res.ok) {
-                    res.json()
-                    .then(body => {
-                        scoreUpdateHandler(body.data);
-                    });
-                } else {
-                    setScores(<p>Scores unavailable</p>);
-                }
-            });
-
-            return () => {
-                socket.close();
-            }
         }
+    }, []);
+
+    useEffect(() => {
+        if(socket.current === null || socket.current.readyState > 1) {
+            socket.current = new WebSocket('ws://localhost:5173/ws');
+
+            socket.current.onclose = (ev) => {
+                console.log("closed");
+            };
+
+            socket.current.onmessage = (ev) => {
+                scoreUpdateHandler(JSON.parse(ev.data));
+            };
+
+            socket.current.onerror = (ev) => {
+                console.log(ev);
+            };
+
+            socket.current.onopen = (openEv) => {
+                console.log("opened");
+            };
+        }
+
+        fetch("/api/topScores", {
+            method: "GET"
+        })
+        .then(res => {
+            if(res.ok) {
+                res.json()
+                .then(body => {
+                    scoreUpdateHandler(body.data);
+                });
+            } else {
+                setScores(<p>Scores unavailable</p>);
+            }
+        });
+
+        return () => {
+            socket.current.close()
+        };
     }, []);
 
     const handleLogout = async () => {
@@ -102,15 +116,17 @@ const User = () => {
                         .then(res => {
                             if(res.ok) {
                                 dispatch(set(values.user));
+                            } else {
+                                console.log(res.status);
                             }
                         });
                     }}
                 >
                     <Form>
-                        <label htmlFor="username">username: </label>
-                        <Field name="username" type="text" />
-                        <ErrorMessage name="username" component="div" />
-                        <button type="submit">register</button>
+                        <label htmlFor="user">user: </label>
+                        <Field name="user" type="text" />
+                        <ErrorMessage name="user" component="div" />
+                        <button type="submit">Change</button>
                     </Form>
                 </Formik>
                 <button onClick={handleLogout}>Logout</button>
@@ -120,7 +136,7 @@ const User = () => {
                 </div>
                 <Link to='/scores'><button>All scores</button></Link>
             </div>
-            <Canvas width={119} height={119} />
+            <Canvas/>
         </div>
     );
 };

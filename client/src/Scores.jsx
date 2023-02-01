@@ -40,6 +40,7 @@ const Scores = () => {
             })
             .then(res => {
                 if(res.ok) {
+                    console.log("okk");
                     res.json()
                     .then(body => {
                         setScores(

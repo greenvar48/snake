@@ -5,20 +5,46 @@ import { Apple } from './game/Apple.js';
 
 import style from '../styles/game.module.sass';
 
-const Canvas = (props) => {
+const Canvas = () => {
     const canvasRef = useRef(null);
     const frameId = useRef(null);
 
-    const [gameOver, setGameOver] = useState(false);
-    const [score, setScore] = useState(0);
+    const [ gameOver, setGameOver ] = useState(false);
+    const [ score, setScore ] = useState(0);
     const [ play, setPlay ] = useState(false);
+    const [ canvasSize, setCanvasSize ] = useState(1);
+    const [ newCanvasSize, setNewCanvasSize ] = useState(1);
+    const [ snakeColor, setSnakeColor ] = useState("#ffffff");
+
+    useEffect(() => {
+        fetch("/api/color")
+        .then(res => {
+            if(res.ok) {
+                res.json().then(body => {
+                    setSnakeColor(body.color);
+                });
+            }
+        });
+
+        fetch("/api/canvasSize")
+        .then(res => {
+            if(res.ok) {
+                res.json().then(body => {
+                    setCanvasSize(body.canvasSize);
+                    setNewCanvasSize(body.canvasSize);
+                });
+            }
+        });
+    }, []);
 
     useEffect(() => {
         const gameInit = () => {
             const canvas = canvasRef.current;
             const context = canvas.getContext('2d');
+            const fieldSize = canvasSize * 6;
+            const squareSize = canvasSize * 5;
 
-            const player = new Player({ x: 0, y: 6 });
+            const player = new Player({ x: 0, y: fieldSize }, squareSize, snakeColor);
 
             const handleKeydown = (ev) => {
                 const left =
@@ -34,12 +60,12 @@ const Canvas = (props) => {
             };
 
             let lastFrameTimestamp = null;
-            let speed = 1000;
+            let speed = 900;
 
             let apple = null;
 
             if(player.head === null) {
-                player.addHead({x: 36, y: 36});
+                player.addHead({x: fieldSize * 3, y: fieldSize * 3});
             }
 
             window.addEventListener('keydown', handleKeydown);
@@ -55,7 +81,7 @@ const Canvas = (props) => {
                     lastFrameTimestamp = timestamp;
                     
                     while(apple === null) {
-                        apple = new Apple();
+                        apple = new Apple(canvas.width, fieldSize, squareSize);
                         let conflict = false;
                         let currentNode = player.head;
 
@@ -82,7 +108,7 @@ const Canvas = (props) => {
                     context.fillStyle = '#000000';
                     context.fillRect(0, 0, canvas.width, canvas.height);
 
-                    drawFrame(context);
+                    drawFrame(context, fieldSize, squareSize);
                     player.draw(context);
                     if(apple !== null) apple.draw(context);
                 }
@@ -118,7 +144,7 @@ const Canvas = (props) => {
     return (
         <div className={style.container} >
             <span>Score: {score}</span>
-            <canvas ref={canvasRef} {...props}></canvas><br/>
+            <canvas ref={canvasRef} width={canvasSize*83} height={canvasSize*83}></canvas><br/>
             {
                 gameOver
                 ?
@@ -139,7 +165,55 @@ const Canvas = (props) => {
                 <button onClick={() => setPlay(true)}>Play</button>
                 : null
             }
-            
+            {
+                !play ?
+                <>
+                    <div>
+                        game window size:
+
+                        <input
+                            value={newCanvasSize}
+                            onChange={(ev) => {
+                                setNewCanvasSize(ev.target.value);
+
+                                if(ev.target.value > 0) {
+                                    setCanvasSize(ev.target.value);
+
+                                    fetch('/api/canvasSize', {
+                                        method: "POST",
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                        },
+                                        body: JSON.stringify({ canvasSize: ev.target.value })
+                                    });
+                                }
+                            }}
+                            type="number"
+                        />
+                    </div>
+                <div>
+                    snake color:
+
+                    <input
+                        value={snakeColor}
+                        onChange={(ev) => {
+                            setSnakeColor(ev.target.value);
+
+                            fetch('/api/color', {
+                                method: "POST",
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({ color: ev.target.value })
+                            });
+                        }}
+                        type="color"
+                    />
+                </div>
+                
+                </>
+                : null
+            }
         </div>
     );
 };

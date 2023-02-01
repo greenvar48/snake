@@ -30,10 +30,9 @@ const server = app.listen(port, () => {
 });
 
 const wsServer = new ws.Server({ server, path: '/ws' });
+let wsHandlers = {};
 
 let driver = null;
-
-let wsHandlers = {};
 
 const connect = async () => {
   try {
@@ -57,25 +56,28 @@ const connect = async () => {
 connect();
 
 const userAuth = (username, password) => async (session) => {
-  return await session.executeRead(async (tx) => {
-    const result = await tx.run(
+  let result = {};
+
+  const queryResult = await session.executeRead(async (tx) =>
+    await tx.run(
       'MATCH (u:user { username: $username }) RETURN u;',
       { username }
-    );
+  ));
 
-    const records = result.records;
-    if(records.length > 0) {
-      const user = records[0].get("u").properties;
-      const passwordsMatch = user.password === crypto.pbkdf2Sync(password, process.env.SPICE, 1000, 64, 'sha512').toString('hex');
-      return passwordsMatch ? 0 : 1;
-    } else {
-      return 2; // User not found
-    }
-  });
+  const records = queryResult.records;
+  if(records.length > 0) {
+    const user = records[0].get("u").properties;
+    const passwordsMatch = user.password === crypto.pbkdf2Sync(password, process.env.SPICE, 1000, 64, 'sha512').toString('hex');
+    result.status = passwordsMatch ? 200 : 401; // ok or unauthorized
+  } else {
+    result = 404; // User not found
+  }
+
+  return result;
 };
 
-const execQuery = async (query, results) => {
-  let result = -1;
+const execQuery = async (query) => {
+  let result = {};
   let session;
 
   if(driver !== null) {
@@ -84,70 +86,57 @@ const execQuery = async (query, results) => {
       result = await query(session);
     } catch(error) {
       console.log(error);
+      result.status = 500;
     } finally {
       session?.close();
     }
   }
   
-  return results(result);
+  return result;
 };
 
 app.post('/api/login', async function(req, res) {
+  let result = { status: 400 };
+
   if(
     req.body.username !== undefined &&
     req.body.password !== undefined
   ) {
     const username = req.body.username.trim();
-    const result = await execQuery(userAuth(username, req.body.password), (n) => {
-      switch(n) {
-        case 0:
-          return { status: 200, cookie: jwt.sign({ username }, process.env.TOKEN_SECRET) };
-        case 1:
-          return { status: 401 };
-        case 2:
-          return { status: 404 };
-        default:
-          return { status: 500 };
-      }
-    });
+    const result = await execQuery(userAuth(username, req.body.password));
 
-    if(!!result.cookie) {
-      res.cookie("token", result.cookie, { sameSite: "lax" });
+    if(result.status === 200) {
+      res.cookie("token", jwt.sign({ username }, process.env.TOKEN_SECRET), { sameSite: "lax" });
       res.cookie("username", username, { sameSite: "lax" });
     }
-
-    res.status(result.status).send();
-  } else {
-    res.status(400).send();
   }
+
+  res.status(result.status).send();
 });
 
-const userExists = async (session, username) => await session.executeRead(async tx => {
-  return (await tx.run(
-    'MATCH (u:user { username: $username }) RETURN u;',
-    { username }
-  )).records.length > 0;
-});
+const userExists = (username) => async (session) => 
+  await session.executeRead(async tx => 
+    (await tx.run(
+      'MATCH (u:user { username: $username }) RETURN u;',
+      { username }
+    )).records.length > 0
+  );
 
 const createUser = (username, password) => async (session) => {
-  let result = 0; // successful write
-  if(!(await userExists(session, username))) {
-    try {
-      await session.executeWrite(async tx => {
-        return await tx.run(
-          'CREATE (:user { username: $username, password: $password });',
-          {
-            username,
-            password: pbkdf2Sync(password, process.env.SPICE, 1000, 64, 'sha512').toString('hex')
-          }
-        );
-      });
-    } catch(error) {
-      console.log(error);
-      result = -2; // write unsuccessful
-    }
+  let result = { status: 200 }; // successful user creation
+
+  if(!(await userExists(username)(session))) {
+    await session.executeWrite(async tx => {
+      return await tx.run(
+        'CREATE (:user { username: $username, password: $password });',
+        {
+          username,
+          password: pbkdf2Sync(password, process.env.SPICE, 1000, 64, 'sha512').toString('hex')
+        }
+      );
+    });
   } else {
-    result = 1; // user already exists
+    result.status = 409; // user already exists
   }
 
   return result;
@@ -166,16 +155,7 @@ app.post('/api/register', async (req, res) => {
       !!username.match(/^[a-zA-Z0-9_]+$/) &&
       !!req.body.password.match(/^(?=(.*[0-9]){2,})(?=(.*[a-z]){2,})(?=(.*[A-Z]){2,})(?=(.*[!@#$%^&*()\-__+.]){1,}).{8,}$/)
     ) {
-      result = await execQuery(createUser(username, req.body.password), (n) => {
-        switch(n) {
-          case 0:
-            return { status: 200 };
-          case 1:
-            return { status: 409 };
-          default:
-            return { status: 500 };
-        }
-      });
+      result = await execQuery(createUser(username, req.body.password));
     }
   }
 
@@ -183,21 +163,17 @@ app.post('/api/register', async (req, res) => {
 });
 
 const saveScore = (username, score) => async (session) => {
-  let result = 0;
+  let result = { status: 200 };
+
   if(await userExists(session, username)) {
-    try {
-      await session.executeWrite(async tx => {
-        return await tx.run(
-          'MATCH (u:user { username: $username }) CREATE (u)-[:SCORED { datetime: datetime() }]->(:score { value: $score, id: $id });',
-          { username, score, id: uuidv4() }
-        );
-      });
-    } catch(error) {
-      console.log(error);
-      result = -2; // 500
-    }
+    await session.executeWrite(async tx => {
+      return await tx.run(
+        'MATCH (u:user { username: $username }) CREATE (u)-[:SCORED { datetime: datetime() }]->(:score { value: $score, id: $id });',
+        { username, score, id: uuidv4() }
+      );
+    });
   } else {
-    result = 1;
+    result.status = 404;
   }
 
   return result;
@@ -205,30 +181,20 @@ const saveScore = (username, score) => async (session) => {
 
 app.post('/api/score', async (req, res) => {
   let result = { status: 400 };
+
   if(
     req.body.score !== undefined &&
     !!req.body.score.toString().match(/^[0-9]+$/) &&
     req.token !== undefined
   ) {
-    await execQuery(saveScore(req.token.username, req.body.score), (n) => {
-      switch(n) {
-        case 0:
-          result.status = 200;
-          break;
-        case 1:
-          result.status = 404;
-          break;
-        default:
-          result.status = 500;
-      }
-    });
+    result = await execQuery(saveScore(req.token.username, req.body.score));
 
     if(wsHandlers[req.token.username]) {
-      const data = await execQuery(getTopScores(req.token.username), (n) => {
-        return n.code === 0 ? n.data : null;
-      });
-      
-      wsHandlers[req.token.username](JSON.stringify(data));
+      const topScoresResult = await execQuery(getTopScores(req.token.username));
+
+      if(topScoresResult.status === 200) {
+        wsHandlers[req.token.username](JSON.stringify(topScoresResult.data));
+      }
     }
   }
 
@@ -236,187 +202,234 @@ app.post('/api/score', async (req, res) => {
 });
 
 const getTopScores = (username) => async (session) => {
-  let result = { code: 0 };
-  if(await userExists(session, username)) {
-    try {
-      const queryResult = await session.executeRead(async tx => {
-        return await tx.run(
-          'MATCH (:user { username: "joe" })-[:SCORED]->(s:score) WITH s ORDER BY s.value DESC WITH collect(s) AS scores UNWIND scores[0..10] as r RETURN r.value',
-          { username }
-        );
-      });
+  let result = { status: 200 };
 
-      result.data = queryResult.records.map(record => record.get('r.value'));
-    } catch(error) {
-      console.log(error);
-      result.code = -2; // 500
-      result.data = undefined;
-    }
+  if(await userExists(session, username)) {
+    const queryResult = await session.executeRead(async tx => {
+      return await tx.run(
+        'MATCH (:user { username: $username })-[:SCORED]->(s:score) WITH s ORDER BY s.value DESC WITH collect(s) AS scores UNWIND scores[0..10] as r RETURN r.value',
+        { username }
+      );
+    });
+
+    result.data = queryResult.records.map(record => record.get('r.value'));
   } else {
-    result.code = 1;
+    result.status = 404;
   }
 
   return result;
 };
 
 app.get('/api/topScores', async (req, res) => {
-  const result = { status: 400, data: {} };
+  let result = { status: 400 };
   
   if(req.token !== undefined) {
-    await execQuery(getTopScores(req.token.username), (n) => {
-      switch(n.code) {
-        case 0:
-          result.data = n.data
-          result.status = 200;
-          break;
-        case 1:
-          result.status = 404;
-          break;
-        default:
-          result.status = 500;
-      }
-    });
+    result = await execQuery(getTopScores(req.token.username));
   }
 
   res.status(result.status).json({data: result.data});
 });
 
 const getScores = (username) => async (session) => {
-  let result = { code: 0 };
-  if(await userExists(session, username)) {
-    try {
-      const queryResult = await session.executeRead(async tx => {
-        return await tx.run(
-          'MATCH (:user { username: "joe" })-[:SCORED]->(s:score) RETURN s;',
-          { username }
-        );
-      });
+  let result = { status: 200 };
 
-      result.data = queryResult.records.map(record => record.get('s').properties);
-    } catch(error) {
-      console.log(error);
-      result.code = -2; // 500
-      result.data = undefined;
-    }
+  if(await userExists(session, username)) {
+    const queryResult = await session.executeRead(async tx => {
+      return await tx.run(
+        'MATCH (:user { username: $username })-[:SCORED]->(s:score) RETURN s;',
+        { username }
+      );
+    });
+
+    result.data = queryResult.records.map(record => record.get('s').properties);
   } else {
-    result.code = 1;
+    result.status = 404;
   }
 
   return result;
 };
 
 app.get('/api/scores', async (req, res) => {
-  const result = { status: 400, data: {} };
+  let result = { status: 400 };
   
   if(req.token !== undefined) {
-    await execQuery(getScores(req.token.username), (n) => {
-      switch(n.code) {
-        case 0:
-          result.data = n.data;
-          result.status = 200;
-          break;
-        case 1:
-          result.status = 404;
-          break;
-        default:
-          result.status = 500;
-      }
-    });
+    result = await execQuery(getScores(req.token.username));
   }
 
   res.status(result.status).json({data: result.data});
 });
+/*
+const scoreExists = (scoreId) => async (session) => {
+  await session.executeRead(async tx =>
+    tx.run("MATCH ()-[:SCORED]->(s:score { id: $id }) RETURN S"));
+};*/
 
 const deleteScore = (scoreId) => async (session) => {
-  let result = 0;
+  await session.executeWrite(async tx => {
+    return await tx.run(
+      'MATCH ()-[r:SCORED]->(s:score { id: $id }) DELETE r,s;',
+      { id: scoreId }
+    );
+  });
 
-  try {
-    await session.executeWrite(async tx => {
-      return await tx.run(
-        'MATCH ()-[r:SCORED]->(s:score { id: $id }) DELETE r,s;',
-        { id: scoreId }
-      );
-    });
-  } catch(error) {
-    console.log(error);
-    result = -2; // 500
-  }
-
-  return result;
+  return { status: 200 };
 };
 
 app.delete('/api/scores', async (req, res) => {
-  let status = 400;
+  let result = { status: 400 };
 
   if(
     req.token !== undefined &&
     req.body.scoreId !== undefined
   ) {
-    await execQuery(deleteScore(req.body.scoreId), (n) => {
-      switch(n) {
-        case 0:
-          status = 200;
-          break;
-        default:
-          status = 500;
-      }
-    });
+    result = await execQuery(deleteScore(req.body.scoreId));
   }
 
-  res.status(status).send();
+  res.status(result.status).send();
 });
 
 app.post('/api/logout', (req, res) => {
-  let result = 400;
+  let result = { status: 400 };
 
   if(req.token !== undefined) {
     res.clearCookie('username', { sameSite: "lax" });
     res.clearCookie('token', { sameSite: "lax" });
 
-    result = 200;
+    result.status = 200;
   }
 
-  res.status(result).send();
+  res.status(result.status).send();
 });
 
-const changeUsername = (username, newUsername) => (session) => {
-  result = 0;
+const changeUsername = (username, newUsername) => async (session) => {
+  let result = { status: 200 };
 
-  try {
-    session.executeWrite(async tx => {
-      return await tx.run(
-        'MATCH (u:user { username: $username }) SET u.username=$newUsername;',
-        { username, newUsername }
-      );
-    })
-  } catch (err) {
-    console.log(err);
-    result = -1;
-  }
+  await session.executeWrite(async tx => {
+    return await tx.run(
+      'MATCH (u:user { username: $username }) SET u.username=$newUsername;',
+      { username, newUsername }
+    );
+  });
 
   return result;
 };
 
 app.post('/api/changeUsername', async (req, res) => {
-  let status = 400;
+  let result = { status: 400 };
+
   if(
     req.token !== undefined &&
     req.body.username !== undefined &&
     !!req.body.username.trim().match(/^[a-zA-Z0-9_]+$/)
   ) {
     const username = req.body.username.trim();
-    status = execQuery(changeUsername(req.token.username, username), (n) => {
-      if(n === 0) {
-        res.cookies("token", jwt.sign({ username }, process.env.TOKEN_SECRET), { sameSite: "lax" });
-        res.cookies("username", username, { sameSite: "lax"});
-        return 200;
-      } else {
-        return 500;
-      }
-    });
+    result = await execQuery(changeUsername(req.token.username, username));
+
+    if(result.status === 200) {
+      res.cookie("token", jwt.sign({ username }, process.env.TOKEN_SECRET), { sameSite: "lax" });
+      res.cookie("username", username, { sameSite: "lax"});
+    }
   }
 
-  res.status(status).send();
+  res.status(result.status).send();
+});
+
+const getColor = (username) => async (session) => {
+  let result = { status: 200 };
+
+  const queryResult = await session.executeRead(async tx =>
+    await tx.run("MATCH (u:user { username: $username }) RETURN u.color;", { username })
+  );
+
+  if(queryResult.records.length > 0) {
+    result.color = queryResult.records[0].get("u.color");
+  } else {
+    result.status = 404;
+  }
+
+  return result;
+}
+
+app.get('/api/color', async (req, res) => {
+  let result = { status: 400 };
+
+  if(req.token !== undefined) {
+    result = await execQuery(getColor(req.token.username));
+  }
+
+  res.status(result.status).json({ color: result.color });
+});
+
+const setColor = (username, color) => async (session) => {
+  await session.executeWrite(async tx =>
+    await tx.run("MATCH (u:user { username: $username }) SET u.color=$color;",
+    { username, color })
+  );
+
+  return { status: 200 };
+};
+
+app.post('/api/color', async (req, res) => {
+  let result = { status: 400 };
+
+  if(
+    req.token !== undefined &&
+    req.body.color !== undefined &&
+    !!req.body.color.match(/^#[0-9a-f]{6}([0-9a-f]{2})?$/)
+  ) {
+    result = await execQuery(setColor(req.token.username, req.body.color));
+  }
+
+  res.status(result.status).send();
+});
+
+const getCanvasSize = (username) => async (session) => {
+  let result = { status: 200 };
+
+  const queryResult = await session.executeRead(async tx =>
+    await tx.run("MATCH (u:user { username: $username }) RETURN u.canvasSize;", { username })
+  );
+
+  if(queryResult.records.length > 0) {
+    result.canvasSize = queryResult.records[0].get("u.canvasSize");
+  } else {
+    result.status = 404;
+  }
+
+  return result;
+}
+
+app.get('/api/canvasSize', async (req, res) => {
+  let result = { status: 400 };
+
+  if(req.token !== undefined) {
+    result = await execQuery(getCanvasSize(req.token.username));
+  }
+
+  res.status(result.status).json({ canvasSize: result.canvasSize });
+});
+
+const setCanvasSize = (username, canvasSize) => async (session) => {
+  await session.executeWrite(async tx =>
+    await tx.run("MATCH (u:user { username: $username }) SET u.canvasSize=$canvasSize;",
+    { username, canvasSize })
+  );
+
+  return { status: 200 };
+};
+
+app.post('/api/canvasSize', async (req, res) => {
+  let result = { status: 400 };
+
+  if(
+    req.token !== undefined &&
+    req.body.canvasSize !== undefined &&
+    req.body.canvasSize > 0
+  ) {
+    result = await execQuery(setCanvasSize(req.token.username, req.body.canvasSize));
+  }
+
+  res.status(result.status).send();
 });
 
 const parseCookie = str =>

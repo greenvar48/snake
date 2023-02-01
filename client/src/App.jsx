@@ -18,7 +18,6 @@ const App = () => {
             <Route path="/register" element={<Register />} />
             {/*<Route path="/serverError" element={<ServerError />} />*/}
             <Route path="/user" element={<User />} />
-            <Route path='/game' element={<Canvas width={119} height={119} />} />
             <Route path="/scores" element={<Scores />} />
         </Routes>
     );
