@@ -7,8 +7,8 @@ import Login from './Login';
 import Register from './Register';
 import ServerError from "./ServerError";
 import User from "./User";
-import Canvas from "./Canvas";
 import Scores from './Scores';
+import Admin from "./Admin";
 
 const App = () => {
     return (
@@ -19,6 +19,7 @@ const App = () => {
             {/*<Route path="/serverError" element={<ServerError />} />*/}
             <Route path="/user" element={<User />} />
             <Route path="/scores" element={<Scores />} />
+            <Route path='/admin' element={<Admin />} />
         </Routes>
     );
 };

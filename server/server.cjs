@@ -70,7 +70,7 @@ const userAuth = (username, password) => async (session) => {
     const passwordsMatch = user.password === crypto.pbkdf2Sync(password, process.env.SPICE, 1000, 64, 'sha512').toString('hex');
     result.status = passwordsMatch ? 200 : 401; // ok or unauthorized
   } else {
-    result = 404; // User not found
+    result.status = 404; // User not found
   }
 
   return result;
@@ -103,14 +103,14 @@ app.post('/api/login', async function(req, res) {
     req.body.password !== undefined
   ) {
     const username = req.body.username.trim();
-    const result = await execQuery(userAuth(username, req.body.password));
-
+    result = await execQuery(userAuth(username, req.body.password));
+    
     if(result.status === 200) {
       res.cookie("token", jwt.sign({ username }, process.env.TOKEN_SECRET), { sameSite: "lax" });
       res.cookie("username", username, { sameSite: "lax" });
     }
   }
-
+  
   res.status(result.status).send();
 });
 
@@ -128,10 +128,10 @@ const createUser = (username, password) => async (session) => {
   if(!(await userExists(username)(session))) {
     await session.executeWrite(async tx => {
       return await tx.run(
-        'CREATE (:user { username: $username, password: $password });',
+        'CREATE (:user { username: $username, password: $password, color: "#ffffff", canvasSize: "1" });',
         {
           username,
-          password: pbkdf2Sync(password, process.env.SPICE, 1000, 64, 'sha512').toString('hex')
+          password: crypto.pbkdf2Sync(password, process.env.SPICE, 1000, 64, 'sha512').toString('hex')
         }
       );
     });
@@ -152,6 +152,7 @@ app.post('/api/register', async (req, res) => {
     const username = req.body.username.trim();
 
     if(
+      username !== "admin" &&
       !!username.match(/^[a-zA-Z0-9_]+$/) &&
       !!req.body.password.match(/^(?=(.*[0-9]){2,})(?=(.*[a-z]){2,})(?=(.*[A-Z]){2,})(?=(.*[!@#$%^&*()\-__+.]){1,}).{8,}$/)
     ) {
@@ -430,6 +431,70 @@ app.post('/api/canvasSize', async (req, res) => {
   }
 
   res.status(result.status).send();
+});
+
+const userMod = (name, user) => async (session) => {
+  await session.executeWrite(async tx =>
+    await tx.run(
+      "MATCH (u:user { username: $name }) \
+      SET \
+      u.username=$username, \
+      u.color=$color, \
+      u.canvasSize=$canvasSize;",
+      { ...user, name }
+    )
+  );
+
+  return { status: 200 };
+}
+
+app.post('/api/userMod', async (req, res) => {
+  let result = { status: 400 };
+
+  if(
+    req.token !== undefined &&
+    req.token.username === "admin" &&
+    req.body.user !== undefined &&
+    !!req.body.user.username.match(/^[a-zA-Z0-9_]+$/) &&
+    !!req.body.name.match(/^[a-zA-Z0-9_]+$/) &&
+    !!req.body.user.color.match(/^#[0-9a-f]{6}([0-9a-f]{2})?$/) &&
+    req.body.user.canvasSize > 0
+  ) {
+    result = await execQuery(userMod(req.body.name, req.body.user));
+  }
+
+  res.status(result.status).send();
+});
+
+const getUsers = (match) => async (session) => {
+  let result = { status: 200, users: [] };
+
+  const queryResult = await session.executeRead(async tx =>
+    await tx.run("MATCH (u:user) WHERE u.username CONTAINS $match RETURN u;", { match })
+  );
+  
+  const records = queryResult.records;
+  if(records.length > 0) {
+    result.users = records.map(record => record.get('u').properties);
+  } else {
+    result.status = 404;
+  }
+
+  return result;
+};
+
+app.post('/api/search', async (req, res) => {
+  let result = { status: 400, users: [] }
+
+  if(
+    req.token !== undefined &&
+    req.token.username === "admin" &&
+    req.body.search !== undefined
+  ) {
+    result = await execQuery(getUsers(req.body.search));
+  }
+  
+  res.status(result.status).json({ users: result.users });
 });
 
 const parseCookie = str =>

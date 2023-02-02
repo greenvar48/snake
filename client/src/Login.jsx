@@ -17,7 +17,11 @@ const Login = () => {
 
     useLayoutEffect(() => {
         if(!!username) {
-            navigate('/user');
+            if(username === "admin") {
+                navigate('/admin');
+            } else {
+                navigate('/user');
+            }
         }
     });
 
@@ -53,7 +57,11 @@ const Login = () => {
                             setSubmitErrors("");
                             dispatch(set(values.username));
                             resetForm();
-                            navigate('/user');
+                            if(values.username.trim() === "admin") {
+                                navigate('/admin');
+                            } else {
+                                navigate('/user');
+                            }
                         } else if(res.status === 400) {
                             setSubmitErrors("Invalid request");
                         } else if(res.status === 404) {
