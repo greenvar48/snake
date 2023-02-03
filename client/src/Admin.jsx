@@ -1,29 +1,27 @@
-import { useLayoutEffect } from "react";
-import { useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useSelector } from "react-redux";
 import { useNavigate } from "react-router";
 import { Formik, Form, Field } from 'formik';
-import { useMemo } from "react";
+import { v4 as uuidv4 } from 'uuid';
 
 const Admin = () => {
     const [ search, setSearch ] = useState("");
     const username = useSelector(state => state.user.name);
     const navigate = useNavigate();
     const [ users, setUsers ] = useState([]);
-    
+    const [ checkMark, setCheckMark ] = useState({i: null, ok: null});
 
-    useLayoutEffect(() => {
+    useEffect(() => {
         if(username !== "admin") {
             navigate('/login');
         }
     });
 
-    const usersList = (arr) => {
-        console.log(arr);
-        return arr.reduce((acc, user, i) => [
+    const usersList = (arr) =>
+        arr.reduce((acc, user, i) => [
             ...acc,
             <Formik
-                key={i}
+                key={uuidv4()}
                 initialValues={{
                     username: user.username,
                     color: user.color,
@@ -37,6 +35,9 @@ const Admin = () => {
                         },
                         body: JSON.stringify({ user: values, name: user.username })
                     })
+                    .then(res => {
+                        setCheckMark({i, ok: res.ok});
+                    });
                 }}
             >
                 <Form>
@@ -49,20 +50,21 @@ const Admin = () => {
                             </tr>
                         </thead>
                         <tbody>
-                    <tr>
-                        <td><Field name="username" type="text" /></td>
-                        <td><Field name="color" type="color" /></td>
-                        <td><Field name="canvasSize" type="number" /></td>
-                        <td><button type="submit">save</button></td>
-                    </tr>
-                    </tbody>
+                            <tr>
+                                <td><Field name="username" type="text" /></td>
+                                <td><Field name="color" type="color" /></td>
+                                <td><Field name="canvasSize" type="number" /></td>
+                                <td><button type="submit">save</button></td>
+                                <td>{ checkMark.i === i ? checkMark.ok ? "\u2713" : "\u274C" : null }</td>
+                            </tr>
+                        </tbody>
                     </table>
                 </Form>
             </Formik>
-        ], [])};
-
-    const list = useMemo(() => usersList(users), [ users ]);
+        ], []);
     
+    const list = useMemo(() => usersList(users), [users, checkMark]);
+
     return (
         <>
             <form onSubmit={(ev) => {
@@ -78,16 +80,17 @@ const Admin = () => {
                 .then(res => res.json())
                 .then(body => {
                     setUsers(body.users);
+                    setCheckMark({i: null, ok: null});
                 });
             }}>
                 <input
                     type="text"
-                    value={search} 
+                    value={search}
                     onChange={(ev) => setSearch(ev.target.value)}
                 />
                 <input type="submit" value="Search User"/>
             </form>
-            { usersList(users) }
+            { list }
         </>
     );
 };

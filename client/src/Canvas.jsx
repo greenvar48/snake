@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from 'react';
+import { useSelector } from "react-redux";
 import drawFrame from './game/Frame';
 import { Player } from './game/Player.js';
 import { Apple } from './game/Apple.js';
@@ -6,6 +7,8 @@ import { Apple } from './game/Apple.js';
 import style from '../styles/game.module.sass';
 
 const Canvas = () => {
+    const username = useSelector(state => state.user.name);
+
     const canvasRef = useRef(null);
     const frameId = useRef(null);
 
@@ -17,24 +20,26 @@ const Canvas = () => {
     const [ snakeColor, setSnakeColor ] = useState("#ffffff");
 
     useEffect(() => {
-        fetch("/api/color")
-        .then(res => {
-            if(res.ok) {
-                res.json().then(body => {
-                    setSnakeColor(body.color);
-                });
-            }
-        });
+        if(username) {
+            fetch("/api/color")
+            .then(res => {
+                if(res.ok) {
+                    res.json().then(body => {
+                        setSnakeColor(body.color);
+                    });
+                }
+            });
 
-        fetch("/api/canvasSize")
-        .then(res => {
-            if(res.ok) {
-                res.json().then(body => {
-                    setCanvasSize(body.canvasSize);
-                    setNewCanvasSize(body.canvasSize);
-                });
-            }
-        });
+            fetch("/api/canvasSize")
+            .then(res => {
+                if(res.ok) {
+                    res.json().then(body => {
+                        setCanvasSize(body.canvasSize);
+                        setNewCanvasSize(body.canvasSize);
+                    });
+                }
+            });
+        }
     }, []);
 
     useEffect(() => {
